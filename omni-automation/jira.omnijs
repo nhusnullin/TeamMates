@@ -1,0 +1,138 @@
+/*{
+    "type": "action"
+}*/
+
+
+function addTeamMembers(urlStr){
+    url = URL.fromString(urlStr + '/teams');
+    url.fetch(function(data){
+        obj = JSON.parse(data.toString())
+
+        for(let teamIndex in obj){
+            var team = obj[teamIndex];
+            var rscTeam = actual.resourceNamed(team.name);
+            if(!rscTeam){
+                rscTeam = actual.rootResource.addMember();
+                rscTeam.name = team.name;
+                rscTeam.type = ResourceType.group;
+            }
+
+            for(let memberIndex in team.members["py/set"]){
+                var member = team.members["py/set"][memberIndex];
+                
+                var rscMember = actual.resourceNamed(member.name);
+                if(!rscMember){
+                    rscMember = rscTeam.addMember();
+                    rscMember.name = member.name;
+                }
+            }
+        }
+
+    });
+}
+
+function addAssignment(task, assignee, group){
+
+    if(assignee == 'undefined'){
+        return;
+    }
+
+    var rsc = actual.resourceNamed(assignee);
+    if(!rsc){
+        rsc = actual.rootResource.addMember();
+        rsc.name = assignee;
+    }
+    
+    if(task.type == TaskType.group){
+        return;
+    }
+
+    task.addAssignment(rsc);
+}
+
+function addTask(issue){
+    var task = actual.taskNamed(issue.key);
+
+    if(!task){
+        task = rootTask.addSubtask();
+        task.title = issue.key;
+    }
+    
+    addAssignment(task, issue.assignee);
+
+    task.setCustomValue("Type", issue.type);
+    task.setCustomValue("Summary", issue.summary);
+    task.setCustomValue("Assigned", issue.assignee);
+
+    if(issue.dev){
+        addDevTask(issue.key + '-dev', issue.dev, task);
+    }
+
+    if(issue.qa){
+        addDevTask(issue.key + '-qa', issue.qa, task);
+    }
+}
+
+function addDevTask(key, assignee, parentTask){
+    var task = actual.taskNamed(key);
+
+    if(!task){
+        task = parentTask.addSubtask();
+        task.title = key;
+    }
+    addAssignment(task, assignee);
+    task.setCustomValue("Assigned", assignee);
+}
+
+function cleanOut(){
+    //actual.rootTask.descendents().forEach((task)=>{task.remove()});
+    actual.rootResource.descendents().forEach((resource)=>{resource.remove()});
+}
+
+function importIssuesFrom(urlStr){
+    url = URL.fromString(urlStr + '/issues');
+    url.fetch(function(data){
+        obj = JSON.parse(data.toString())
+
+        for (let issueIndex in obj["py/set"]){
+            issue = obj["py/set"][issueIndex];
+
+            rootTask = actual.rootTask;
+            if(issue.parent_key){
+
+                rootTask = actual.taskNamed(issue.parent_key);
+                if(!rootTask){
+                    rootTask = actual.rootTask.addSubtask();
+                    rootTask.title = issue.parent_key;
+                }
+            }
+
+            addTask(issue);
+        }
+
+    });
+}
+
+var _ = function() {
+
+	var action = new PlugIn.Action(function(selection) {
+
+        cleanOut();
+
+        var urlStr = 'http://localhost:5000';
+        
+        addTeamMembers(urlStr)
+        importIssuesFrom(urlStr)
+
+	});
+
+    // If needed, uncomment, and add a function that returns true if the current selection is appropriate for the action.
+/*
+    action.validate = function(selection){
+        
+    };
+*/
+        
+	return action;
+}();
+_;
